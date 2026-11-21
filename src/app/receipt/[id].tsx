@@ -249,7 +249,7 @@ export default function ReceiptScreen() {
           <Field label="Note" value={note} onChangeText={setNote} placeholder="Optional" />
         </Card>
 
-        <SectionTitle right={<Text style={styles.muted}>{items.length} lines · {money(itemsSum, currency)}</Text>}>Items</SectionTitle>
+        <SectionTitle right={<Text style={styles.muted}>{items.length} {items.length === 1 ? 'line' : 'lines'} · {money(itemsSum, currency)}</Text>}>Items</SectionTitle>
         {mismatch ? (
           <Card style={{ backgroundColor: theme.accentSoft, borderColor: theme.accentSoft }}>
             <Text style={[styles.body, { fontSize: 14 }]}>

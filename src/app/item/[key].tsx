@@ -18,6 +18,7 @@ export default function ItemDetail() {
   const [editing, setEditing] = useState(false);
   const [newName, setNewName] = useState('');
   const [catOpen, setCatOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const cur = settings.currency;
 
   const s = useMemo(() => summarizeItems(items).find((x) => x.key === key), [items, key]);
@@ -121,7 +122,7 @@ export default function ItemDetail() {
 
         <SectionTitle>Purchase history</SectionTitle>
         <Card>
-          {[...s.events].reverse().map((e, i, arr) => (
+          {[...s.events].reverse().slice(0, showAll ? undefined : 6).map((e, i, arr) => (
             <Pressable
               key={`${e.receiptId}-${i}`}
               onPress={() => router.push({ pathname: '/receipt/[id]', params: { id: String(e.receiptId) } })}
@@ -151,6 +152,14 @@ export default function ItemDetail() {
               </View>
             </Pressable>
           ))}
+          {s.events.length > 6 ? (
+            <Button
+              title={showAll ? 'Show fewer' : `Show all ${s.events.length} purchases`}
+              kind="ghost"
+              onPress={() => setShowAll((v) => !v)}
+              style={{ alignSelf: 'flex-start' }}
+            />
+          ) : null}
         </Card>
 
         <SectionTitle>Tidy up</SectionTitle>

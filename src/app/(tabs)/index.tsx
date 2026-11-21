@@ -1,11 +1,13 @@
 import { router } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
 import { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Bar, Button, Card, Empty, H1, Ionicons, Pill, Screen, SectionTitle, Segmented, Stat, styles } from '../../components/ui';
 import { categoryColor } from '../../lib/categories';
-import { gapText, money, prettyDate } from '../../lib/format';
+import { money, prettyDate } from '../../lib/format';
 import {
   categoryTotals,
+  comparableRange,
   inRange,
   parseISODate,
   periodRange,
@@ -15,6 +17,8 @@ import {
   trend,
   type Period,
 } from '../../lib/stats';
+import { loadSampleData } from '../../lib/db';
+import { buildSampleReceipts } from '../../lib/sample';
 import { theme } from '../../lib/theme';
 import { useAllData } from '../../lib/useData';
 
@@ -25,7 +29,9 @@ const PERIODS: { value: Period; label: string }[] = [
 ];
 
 export default function Overview() {
-  const { receipts, items, settings, loaded } = useAllData();
+  const db = useSQLiteContext();
+  const { receipts, items, settings, loaded, reload } = useAllData();
+  const [loadingSample, setLoadingSample] = useState(false);
   const [period, setPeriod] = useState<Period>('month');
   const [offset, setOffset] = useState(0);
   const cur = settings.currency;
@@ -35,7 +41,9 @@ export default function Overview() {
     const range = periodRange(period, offset, new Date(), ws);
     const prevRange = periodRange(period, offset - 1, new Date(), ws);
     const total = spendInRange(receipts, range);
-    const prev = spendInRange(receipts, prevRange);
+    const cmp = comparableRange(range, prevRange);
+    const prev = spendInRange(receipts, cmp.range);
+    const partial = cmp.partial;
     const cats = categoryTotals(items, range);
     const itemsSum = cats.reduce((s, c) => s + c.total, 0);
     const extra = Math.round((total - itemsSum) * 100) / 100; // VAT, receipt discounts and fees
@@ -49,7 +57,7 @@ export default function Overview() {
       .sort((a, b) => b.daysSinceLast / (b.avgGapDays || 1) - a.daysSinceLast / (a.avgGapDays || 1))
       .slice(0, 5);
     const monthSpend = spendInRange(receipts, periodRange('month', 0, new Date(), ws));
-    return { range, total, prev, cats, extra, bars, tripCount, units, stores, rebuy, monthSpend };
+    return { range, total, prev, partial, cats, extra, bars, tripCount, units, stores, rebuy, monthSpend };
   }, [receipts, items, period, offset, ws]);
 
   if (loaded && receipts.length === 0) {
@@ -60,8 +68,25 @@ export default function Overview() {
           icon="receipt-outline"
           title="Scan your first receipt"
           text="Take a photo of a receipt. The AI reads every line, sorts it into a category and starts tracking how often you buy each item."
-          action={<Button title="Scan a receipt" icon="scan" onPress={() => router.navigate('/scan')} />}
+          action={
+            <View style={{ alignSelf: 'stretch', gap: 8 }}>
+              <Button title="Scan a receipt" icon="scan" onPress={() => router.navigate('/scan')} />
+              <Button
+                title="Try it with sample receipts"
+                icon="sparkles-outline"
+                kind="secondary"
+                loading={loadingSample}
+                onPress={async () => {
+                  setLoadingSample(true);
+                  await loadSampleData(db, buildSampleReceipts());
+                  setLoadingSample(false);
+                  reload();
+                }}
+              />
+            </View>
+          }
         />
+        <Text style={[styles.hint, { textAlign: 'center' }]}>You can remove the sample receipts any time in Settings.</Text>
       </Screen>
     );
   }
@@ -90,7 +115,8 @@ export default function Overview() {
           <View style={[styles.row, { gap: 6, marginTop: 2 }]}>
             <Ionicons name={change > 0 ? 'trending-up' : 'trending-down'} size={16} color={change > 0 ? theme.accent : theme.good} />
             <Text style={{ color: change > 0 ? theme.accent : theme.good, fontWeight: '700' }}>
-              {Math.abs(change).toFixed(0)}% {change > 0 ? 'more' : 'less'} than the previous {period}
+              {Math.abs(change).toFixed(0)}% {change > 0 ? 'more' : 'less'} than{' '}
+              {data.partial ? `this point last ${period}` : `the previous ${period}`}
             </Text>
           </View>
         ) : null}
@@ -158,7 +184,7 @@ export default function Overview() {
                 <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text style={[styles.body, { fontWeight: '700' }]} numberOfLines={1}>{s.name}</Text>
                   <Text style={styles.muted}>
-                    Usually every {gapText(Math.round(s.avgGapDays ?? 0))} · last bought {s.daysSinceLast} d ago
+                    You buy it every ~{Math.round(s.avgGapDays ?? 0)} days · last bought {s.daysSinceLast} days ago
                   </Text>
                 </View>
                 <Pill

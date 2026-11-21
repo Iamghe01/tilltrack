@@ -219,3 +219,18 @@ export async function exportCsv(db: SQLiteDatabase): Promise<string> {
   ];
   return [header.join(','), ...rows.map((r) => header.map((h) => csvCell(r[h])).join(','))].join('\n');
 }
+
+// ---------- sample data ----------
+
+export async function loadSampleData(db: SQLiteDatabase, receipts: DraftReceipt[]) {
+  for (const r of receipts) await saveReceipt(db, r);
+}
+
+export async function removeSampleData(db: SQLiteDatabase, note: string) {
+  await db.runAsync('DELETE FROM receipts WHERE note = ?', [note]);
+}
+
+export async function countSampleReceipts(db: SQLiteDatabase, note: string) {
+  const r = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM receipts WHERE note = ?', [note]);
+  return r?.n ?? 0;
+}

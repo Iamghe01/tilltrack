@@ -2,11 +2,12 @@ import { File, Paths } from 'expo-file-system';
 import { useFocusEffect } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Text, View } from 'react-native';
 import { Button, Card, Field, H1, Screen, SectionTitle, Segmented, styles } from '../../components/ui';
 import { AiError, testConnection } from '../../lib/ai';
-import { clearAll, exportCsv } from '../../lib/db';
+import { clearAll, countSampleReceipts, exportCsv, loadSampleData, removeSampleData } from '../../lib/db';
+import { buildSampleReceipts, SAMPLE_NOTE } from '../../lib/sample';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from '../../lib/settings';
 import { theme } from '../../lib/theme';
 
@@ -17,13 +18,20 @@ export default function SettingsScreen() {
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [testing, setTesting] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [sampleCount, setSampleCount] = useState(0);
+  const [sampleBusy, setSampleBusy] = useState(false);
+
+  const ready = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
+      ready.current = false;
       loadSettings(db).then((x) => {
         setS(x);
         setBudget(x.monthlyBudget ? String(x.monthlyBudget) : '');
+        setTimeout(() => (ready.current = true), 0);
       });
+      countSampleReceipts(db, SAMPLE_NOTE).then(setSampleCount);
     }, [db]),
   );
 
@@ -31,6 +39,14 @@ export default function SettingsScreen() {
     setS((cur) => ({ ...cur, ...patch }));
     setSaved(false);
   };
+
+  // Changes save themselves shortly after you stop typing.
+  useEffect(() => {
+    if (!ready.current) return;
+    const t = setTimeout(() => onSave(), 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s, budget]);
 
   function current(): Settings {
     const b = Number(budget.replace(',', '.'));
@@ -49,7 +65,6 @@ export default function SettingsScreen() {
   async function onSave() {
     const next = current();
     await saveSettings(db, next);
-    setS(next);
     setSaved(true);
   }
 
@@ -79,7 +94,7 @@ export default function SettingsScreen() {
   function onClear() {
     Alert.alert('Delete all receipts?', "This removes every receipt and item from this phone. It can't be undone.", [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete everything', style: 'destructive', onPress: () => clearAll(db) },
+      { text: 'Delete everything', style: 'destructive', onPress: async () => { await clearAll(db); setSampleCount(0); } },
     ]);
   }
 
@@ -195,13 +210,27 @@ export default function SettingsScreen() {
         />
       </Card>
 
-      <Button title={saved ? 'Saved' : 'Save settings'} icon={saved ? 'checkmark-done' : 'save-outline'} onPress={onSave} />
+      <Text style={[styles.hint, { textAlign: 'center', marginTop: 0 }]}>{saved ? '✓ Changes saved' : 'Changes save automatically'}</Text>
 
       <SectionTitle>Your data</SectionTitle>
       <Card>
         <Text style={[styles.muted, { marginBottom: 10 }]}>
           Receipts and photos are stored on this phone. When you scan, the photo is sent to Google Gemini (or to your FreeLLMAPI server, which passes it on to a free AI provider) to be read. On Gemini's free tier, Google may use what you send to improve its products.
         </Text>
+        <Button
+          title={sampleCount ? `Remove ${sampleCount} sample receipts` : 'Load sample receipts'}
+          icon={sampleCount ? 'close-circle-outline' : 'sparkles-outline'}
+          kind="secondary"
+          loading={sampleBusy}
+          onPress={async () => {
+            setSampleBusy(true);
+            if (sampleCount) await removeSampleData(db, SAMPLE_NOTE);
+            else await loadSampleData(db, buildSampleReceipts());
+            setSampleCount(await countSampleReceipts(db, SAMPLE_NOTE));
+            setSampleBusy(false);
+          }}
+          style={{ marginBottom: 10 }}
+        />
         <Button title="Export to CSV" icon="download-outline" kind="secondary" onPress={onExport} />
         <Button title="Delete all data" icon="trash-outline" kind="danger" onPress={onClear} style={{ marginTop: 10 }} />
       </Card>

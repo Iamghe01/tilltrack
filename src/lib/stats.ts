@@ -294,3 +294,14 @@ export function round2(n: number): number {
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
+
+/**
+ * For a period that is still running, cut the previous period to the same
+ * number of days, so 1–22 Nov is compared with 1–22 Oct rather than all of October.
+ */
+export function comparableRange(current: Range, previous: Range, today: string = toISODate(new Date())): { range: Range; partial: boolean } {
+  if (!(today >= current.start && today <= current.end)) return { range: previous, partial: false };
+  const elapsed = daysBetween(current.start, today);
+  const end = addDays(previous.start, elapsed);
+  return { range: { ...previous, end: end < previous.end ? end : previous.end }, partial: true };
+}

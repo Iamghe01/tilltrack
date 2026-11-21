@@ -4,6 +4,7 @@ import { normalizeCategory } from '../src/lib/categories';
 import { extractJsonObject, parseReceiptJson } from '../src/lib/ai';
 import {
   categoryTotals,
+  comparableRange,
   daysBetween,
   periodRange,
   spendInRange,
@@ -163,6 +164,21 @@ test('mismatched total is flagged', () => {
 });
 test('not a receipt', () => {
   assert.throws(() => parseReceiptJson('{"error":"not_a_receipt"}', 'AED'), /doesn't look like a receipt/);
+});
+
+test('running month is compared with the same days of the previous month', () => {
+  const cur = periodRange('month', 0, today);
+  const prev = periodRange('month', -1, today);
+  const c = comparableRange(cur, prev, '2026-11-17');
+  assert.equal(c.partial, true);
+  assert.equal(c.range.start, '2026-10-01');
+  assert.equal(c.range.end, '2026-10-17');
+  // March 31 compared with February is capped at the end of February
+  const m = comparableRange(periodRange('month', 0, new Date(2026, 2, 31)), periodRange('month', -1, new Date(2026, 2, 31)), '2026-03-31');
+  assert.equal(m.range.end, '2026-02-28');
+  // A finished period is compared in full
+  const f = comparableRange(prev, periodRange('month', -2, today), '2026-11-17');
+  assert.equal(f.partial, false);
 });
 
 console.log(`\n${passed} tests passed`);

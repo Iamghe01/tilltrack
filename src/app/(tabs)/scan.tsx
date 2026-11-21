@@ -1,9 +1,9 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Text, View } from 'react-native';
 import { Button, Card, H1, Ionicons, Screen, SectionTitle, styles } from '../../components/ui';
 import { AiError, extractReceipt } from '../../lib/ai';
@@ -34,6 +34,13 @@ export default function Scan() {
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<{ message: string; hint?: string } | null>(null);
   const [lastPick, setLastPick] = useState<string | null>(null);
+  const [needsKey, setNeedsKey] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadSettings(db).then((st) => setNeedsKey(st.provider === 'gemini' ? !st.geminiKey : !st.apiKey));
+    }, [db]),
+  );
 
   async function process(uri: string) {
     setPreview(uri);
@@ -128,6 +135,20 @@ export default function Scan() {
         </Card>
       ) : (
         <>
+          {needsKey ? (
+            <Card style={{ backgroundColor: theme.warnSoft, borderColor: theme.warnSoft }}>
+              <View style={[styles.row, { gap: 10, alignItems: 'flex-start' }]}>
+                <Ionicons name="key-outline" size={22} color={theme.warn} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.body, { fontWeight: '700' }]}>One step first: add your free AI key</Text>
+                  <Text style={[styles.muted, { marginTop: 2 }]}>
+                    The AI needs a free Gemini key to read receipts. It takes about a minute to get one.
+                  </Text>
+                  <Button title="Add key in Settings" kind="ghost" icon="arrow-forward" onPress={() => router.navigate('/settings')} style={{ alignSelf: 'flex-start', marginTop: 4 }} />
+                </View>
+              </View>
+            </Card>
+          ) : null}
           <Card style={{ alignItems: 'center', paddingVertical: 26 }}>
             <View style={{ width: 84, height: 84, borderRadius: 42, backgroundColor: theme.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons name="camera" size={40} color={theme.accent} />

@@ -35,3 +35,9 @@ export function gapText(days: number | null): string {
   if (days < 60) return `${Math.round(days / 7)} wk`;
   return `${Math.round(days / 30)} mo`;
 }
+
+/** "Sat 21 Nov" — compact, for lists. */
+export function shortDate(iso: string): string {
+  const d = parseISODate(iso);
+  return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}

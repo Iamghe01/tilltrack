@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Image, Text, TextInput, View } from 'react-native';
 import { Button, Card, Empty, H1, Ionicons, Screen, SectionTitle, styles } from '../../components/ui';
 import { listReceipts, type Receipt } from '../../lib/db';
-import { money, prettyDate } from '../../lib/format';
+import { money, shortDate } from '../../lib/format';
 import { parseISODate } from '../../lib/stats';
 import { theme } from '../../lib/theme';
 
@@ -66,14 +66,14 @@ export default function Receipts() {
                 <Image source={{ uri: r.image_uri }} style={{ width: 42, height: 56, borderRadius: 6, backgroundColor: theme.cardAlt }} />
               ) : (
                 <View style={{ width: 42, height: 56, borderRadius: 6, backgroundColor: theme.cardAlt, alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name="create-outline" size={18} color={theme.inkFaint} />
+                  <Ionicons name="receipt-outline" size={18} color={theme.inkFaint} />
                 </View>
               )}
               <View style={{ flex: 1 }}>
                 <Text style={[styles.body, { fontWeight: '700' }]} numberOfLines={1}>{r.store || 'Unknown store'}</Text>
-                <Text style={styles.muted}>
-                  {prettyDate(r.date, true)}
-                  {r.time ? ` · ${r.time}` : ''} · {r.item_count} items
+                <Text style={styles.muted} numberOfLines={1}>
+                  {shortDate(r.date)}
+                  {r.time ? ` · ${r.time}` : ''} · {r.item_count} {r.item_count === 1 ? 'item' : 'items'}
                 </Text>
               </View>
               <Text style={[styles.body, { fontWeight: '800' }]}>{money(r.total, r.currency)}</Text>

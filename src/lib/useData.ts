@@ -15,6 +15,9 @@ export function useAllData() {
     loaded: false,
   });
 
+  const [tick, setTick] = useState(0);
+  const reload = useCallback(() => setTick((t) => t + 1), []);
+
   useFocusEffect(
     useCallback(() => {
       let alive = true;
@@ -25,8 +28,8 @@ export function useAllData() {
       return () => {
         alive = false;
       };
-    }, [db]),
+    }, [db, tick]),
   );
 
-  return state;
+  return { ...state, reload };
 }
