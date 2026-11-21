@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "tilltrack",
+    "name": "TillTrack",
     "slug": "tilltrack",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -11,15 +11,43 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#FBF6EC",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.rbo.tilltrack",
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "TillTrack uses the camera to scan your receipts.",
+          "photosPermission": "TillTrack opens your photos so you can pick a receipt image."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      "expo-sharing"
+    ],
+    "scheme": "tilltrack",
+    "experiments": {
+      "typedRoutes": false
     }
   }
 }
