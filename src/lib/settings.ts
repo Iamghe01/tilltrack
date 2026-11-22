@@ -1,9 +1,12 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export type Provider = 'gemini' | 'freellmapi';
+/** auto: read text on the phone, AI tidies it up. offline: phone only. photo: send the whole photo to the AI. */
+export type ScanMode = 'auto' | 'offline' | 'photo';
 
 export interface Settings {
   provider: Provider; // which AI reads the receipts
+  scanMode: ScanMode;
   geminiKey: string; // Google AI Studio key, used when provider = gemini
   geminiModel: string; // "gemini-flash-latest" always points at the current Flash model
   baseUrl: string; // FreeLLMAPI base, e.g. http://192.168.1.20:3001/v1
@@ -16,6 +19,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   provider: 'gemini',
+  scanMode: 'auto',
   geminiKey: '',
   geminiModel: 'gemini-flash-latest',
   baseUrl: 'http://192.168.1.100:3001/v1',

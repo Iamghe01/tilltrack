@@ -92,6 +92,15 @@ export async function migrate(db: SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_receipts_date ON receipts(date);
     CREATE INDEX IF NOT EXISTS idx_items_key ON items(item_key);
     CREATE INDEX IF NOT EXISTS idx_items_receipt ON items(receipt_id);
+    CREATE TABLE IF NOT EXISTS scan_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      mode TEXT NOT NULL,
+      ms INTEGER NOT NULL,
+      ok INTEGER NOT NULL,
+      items INTEGER NOT NULL DEFAULT 0,
+      message TEXT
+    );
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT
@@ -233,4 +242,61 @@ export async function removeSampleData(db: SQLiteDatabase, note: string) {
 export async function countSampleReceipts(db: SQLiteDatabase, note: string) {
   const r = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM receipts WHERE note = ?', [note]);
   return r?.n ?? 0;
+}
+
+// ---------- scan log (helps work out why a scan was slow or failed) ----------
+
+export interface ScanLogEntry {
+  id: number;
+  created_at: string;
+  mode: string;
+  ms: number;
+  ok: number;
+  items: number;
+  message: string | null;
+}
+
+export async function logScan(db: SQLiteDatabase, e: { mode: string; ms: number; ok: boolean; items: number; message?: string | null }) {
+  await db.runAsync('INSERT INTO scan_log (mode, ms, ok, items, message) VALUES (?,?,?,?,?)', [e.mode, Math.round(e.ms), e.ok ? 1 : 0, e.items, e.message ?? null]);
+  await db.runAsync('DELETE FROM scan_log WHERE id NOT IN (SELECT id FROM scan_log ORDER BY id DESC LIMIT 30)');
+}
+
+export async function recentScans(db: SQLiteDatabase, n = 10) {
+  return db.getAllAsync<ScanLogEntry>('SELECT * FROM scan_log ORDER BY id DESC LIMIT ?', [n]);
+}
+
+// ---------- history used for suggestions, naming and categories ----------
+
+export interface KnownItem {
+  name: string;
+  item_key: string;
+  category: string;
+  last_price: number | null;
+  unit: string | null;
+  times: number;
+  last_date: string;
+}
+
+/** Every product bought before, most frequent first, with its latest price. */
+export async function knownItems(db: SQLiteDatabase): Promise<KnownItem[]> {
+  return db.getAllAsync<KnownItem>(
+    `SELECT i.name, i.item_key, i.category, i.unit,
+            COALESCE(i.unit_price, CASE WHEN i.quantity > 0 THEN i.total_price / i.quantity END) AS last_price,
+            g.times, g.last_date
+     FROM items i
+     JOIN receipts r ON r.id = i.receipt_id
+     JOIN (SELECT i2.item_key, COUNT(*) AS times, MAX(r2.date || printf('%010d', i2.id)) AS last_mark, MAX(r2.date) AS last_date
+           FROM items i2 JOIN receipts r2 ON r2.id = i2.receipt_id WHERE i2.total_price > 0 GROUP BY i2.item_key) g
+       ON g.item_key = i.item_key AND (r.date || printf('%010d', i.id)) = g.last_mark
+     ORDER BY g.times DESC, g.last_date DESC`,
+  );
+}
+
+export async function recentStores(db: SQLiteDatabase, n = 6): Promise<string[]> {
+  const rows = await db.getAllAsync<{ store: string }>(
+    `SELECT store FROM receipts WHERE store IS NOT NULL AND TRIM(store) <> ''
+     GROUP BY LOWER(store) ORDER BY MAX(date) DESC, COUNT(*) DESC LIMIT ?`,
+    [n],
+  );
+  return rows.map((r) => r.store);
 }

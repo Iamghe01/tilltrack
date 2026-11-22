@@ -6,10 +6,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Text, View } from 'react-native';
 import { Button, Card, Field, H1, Screen, SectionTitle, Segmented, styles } from '../../components/ui';
 import { AiError, testConnection } from '../../lib/ai';
-import { clearAll, countSampleReceipts, exportCsv, loadSampleData, removeSampleData } from '../../lib/db';
+import { clearAll, countSampleReceipts, exportCsv, loadSampleData, recentScans, removeSampleData, type ScanLogEntry } from '../../lib/db';
 import { buildSampleReceipts, SAMPLE_NOTE } from '../../lib/sample';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from '../../lib/settings';
 import { theme } from '../../lib/theme';
+
+const MODE_LABEL: Record<string, string> = {
+  'text+ai': 'phone + AI',
+  offline: 'phone only',
+  'offline-fallback': 'phone (AI failed)',
+  'photo+ai': 'photo AI',
+  none: 'no text found',
+};
 
 export default function SettingsScreen() {
   const db = useSQLiteContext();
@@ -20,6 +28,7 @@ export default function SettingsScreen() {
   const [saved, setSaved] = useState(false);
   const [sampleCount, setSampleCount] = useState(0);
   const [sampleBusy, setSampleBusy] = useState(false);
+  const [scans, setScans] = useState<ScanLogEntry[]>([]);
 
   const ready = useRef(false);
 
@@ -32,6 +41,7 @@ export default function SettingsScreen() {
         setTimeout(() => (ready.current = true), 0);
       });
       countSampleReceipts(db, SAMPLE_NOTE).then(setSampleCount);
+      recentScans(db, 8).then(setScans);
     }, [db]),
   );
 
@@ -101,6 +111,26 @@ export default function SettingsScreen() {
   return (
     <Screen>
       <H1 sub="Connection, budget and your data">Settings</H1>
+
+      <SectionTitle>How receipts are read</SectionTitle>
+      <Card>
+        <Segmented
+          value={s.scanMode}
+          onChange={(v) => set({ scanMode: v })}
+          options={[
+            { value: 'auto', label: 'Fast' },
+            { value: 'offline', label: 'Offline' },
+            { value: 'photo', label: 'Photo AI' },
+          ]}
+        />
+        <Text style={[styles.hint, { marginTop: 8 }]}>
+          {s.scanMode === 'auto'
+            ? 'Recommended. Your phone reads the text in about a second, then the AI tidies names, prices and categories. If the AI is slow or offline, you still get the phone result.'
+            : s.scanMode === 'offline'
+              ? 'Only your phone reads the receipt. No internet and no key needed, and it\'s instant, but names stay as printed and need more checking.'
+              : 'The whole photo goes to the AI. It can be best for crumpled or faded receipts, but it is the slowest (up to a minute).'}
+        </Text>
+      </Card>
 
       <SectionTitle>AI that reads your receipts</SectionTitle>
       <Card>
@@ -211,6 +241,28 @@ export default function SettingsScreen() {
       </Card>
 
       <Text style={[styles.hint, { textAlign: 'center', marginTop: 0 }]}>{saved ? '✓ Changes saved' : 'Changes save automatically'}</Text>
+
+      {scans.length ? (
+        <>
+          <SectionTitle>Recent scans</SectionTitle>
+          <Card>
+            {scans.map((x, i) => (
+              <View key={x.id} style={{ paddingVertical: 6, borderTopWidth: i ? 1 : 0, borderTopColor: theme.border }}>
+                <View style={[styles.row, { justifyContent: 'space-between' }]}>
+                  <Text style={[styles.body, { fontSize: 14, fontWeight: '700', color: x.ok ? theme.good : theme.accent }]}>
+                    {x.ok ? `✓ ${x.items} items` : '✗ Failed'} · {MODE_LABEL[x.mode] ?? x.mode}
+                  </Text>
+                  <Text style={styles.muted}>{(x.ms / 1000).toFixed(1)} s</Text>
+                </View>
+                <Text style={styles.hint}>
+                  {x.created_at.replace('T', ' ').slice(5, 16)} UTC{x.message ? ` · ${x.message}` : ''}
+                </Text>
+              </View>
+            ))}
+            <Text style={styles.hint}>If scans keep failing, send a screenshot of this list.</Text>
+          </Card>
+        </>
+      ) : null}
 
       <SectionTitle>Your data</SectionTitle>
       <Card>

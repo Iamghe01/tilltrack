@@ -16,17 +16,26 @@ This takes about 15 minutes. Tick each box. If anything looks wrong, take a scre
 - [ ] **Export to CSV**: the share sheet opens. Send it to yourself and check it opens in a spreadsheet app.
 - [ ] **Remove sample receipts** empties the app again.
 
-## B. With your free Gemini key
+## B. Scanning
+- [ ] **Without a key:** scan a receipt. It should finish in a few seconds ("Read on your phone…") with items you can edit.
 - [ ] Settings → **Gemini (simple)** → paste key → **Test connection** shows green text.
-- [ ] Scan tab: the yellow "add your key" box has gone.
-- [ ] **Take a photo** of a real receipt. The camera permission prompt appears the first time.
-- [ ] "Reading the receipt…" finishes in under a minute.
-- [ ] Review screen: store, date, items, prices and total are mostly right. Note anything the AI got wrong.
-- [ ] Any yellow warnings make sense, for example "items add up to…".
-- [ ] Fix a line, change a category, delete a line, **Save receipt**.
+- [ ] Settings → How receipts are read → **Fast** (the default).
+- [ ] **Take a photo**, then crop to just the receipt. The seconds counter shows how long it takes. Most scans should take under 15 seconds.
+- [ ] The review screen shows the info line, e.g. "Read on your phone, tidied by Gemini in 6.3 s".
+- [ ] Turn on airplane mode and scan. You should still get items, with a note that the AI couldn't help.
+- [ ] **Cancel** during a scan returns you to the Scan screen.
 - [ ] Scan the **same** receipt again. You get the "Already saved?" warning.
-- [ ] **Choose from gallery** works with a screenshot or an older photo.
-- [ ] Turn on airplane mode and scan. You get a clear "Couldn't reach Gemini" message and a **Try again** button.
+- [ ] Settings → **Recent scans** lists each scan with its time and result. Screenshot it if scans fail.
+
+## B2. Typing a receipt in
+- [ ] Scan tab → **Enter it manually**.
+- [ ] Tap a store chip and **Yesterday**.
+- [ ] Tap 2 of the "usually buy" chips. They're added with their last price.
+- [ ] Type "mil". Suggestions appear. Tap one to add it.
+- [ ] Type a new item, set the quantity with **+**, type a price, press **+**. It's added and the total updates.
+- [ ] Use **− / +** on an item. Going below 1 removes it.
+- [ ] Tap an item to edit its name, category or price.
+- [ ] **Save**. It shows on Overview and Receipts.
 
 ## C. Feel and looks
 - [ ] Text is readable and nothing is cut off on your screen size.

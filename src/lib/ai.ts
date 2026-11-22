@@ -179,17 +179,47 @@ export function parseReceiptJson(
   };
 }
 
+/** What we send to the AI: the text rows read on the phone (fast), or the photo (fallback). */
+export type ReceiptInput =
+  | { kind: 'text'; rows: string[]; knownNames?: string[] }
+  | { kind: 'image'; base64: string };
+
+export interface ExtractOptions {
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
+export function textMessage(input: Extract<ReceiptInput, { kind: 'text' }>): string {
+  const names = (input.knownNames ?? []).slice(0, 80);
+  return [
+    'Below is the text of a shop receipt, read by OCR on the phone. Each line is one printed row;',
+    'wide gaps separate columns (the price is usually the last number on a row). OCR can confuse',
+    'O/0, l/1, S/5 and B/8 — fix those. Ignore lines that are not products.',
+    names.length ? `When a product matches one of these names the user already uses, reuse that exact name: ${JSON.stringify(names)}` : '',
+    '',
+    'RECEIPT TEXT:',
+    input.rows.join('\n'),
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 function endpoint(baseUrl: string, path: string) {
   return baseUrl.replace(/\/+$/, '') + path;
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit, ms: number, service = 'FreeLLMAPI') {
+async function fetchWithTimeout(url: string, init: RequestInit, ms: number, service = 'FreeLLMAPI', outer?: AbortSignal) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
+  const onOuter = () => ctrl.abort();
+  outer?.addEventListener('abort', onOuter);
   try {
     return await fetch(url, { ...init, signal: ctrl.signal });
   } catch (e) {
     if ((e as Error).name === 'AbortError') {
+      if (outer?.aborted) throw new AiError('Cancelled.');
       throw new AiError(`${service} took too long to answer.`, 'Free models can be slow at busy times. Try again.');
     }
     if (service === 'Gemini') {
@@ -201,6 +231,7 @@ async function fetchWithTimeout(url: string, init: RequestInit, ms: number, serv
     );
   } finally {
     clearTimeout(t);
+    outer?.removeEventListener('abort', onOuter);
   }
 }
 
@@ -228,32 +259,37 @@ async function readError(res: Response): Promise<AiError> {
   return new AiError(`FreeLLMAPI error ${res.status}${msg ? `: ${msg}` : ''}`);
 }
 
-async function extractViaFreeLLM(settings: Settings, imageBase64: string): Promise<ExtractionResult> {
+async function extractViaFreeLLM(settings: Settings, input: ReceiptInput, opts: ExtractOptions = {}): Promise<ExtractionResult> {
   if (!settings.apiKey) throw new AiError('Add your FreeLLMAPI key first.', 'Open Settings and paste your freellmapi-... key.');
   const today = toISODate(new Date());
-  const res = await fetchWithTimeout(
-    endpoint(settings.baseUrl, '/chat/completions'),
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.apiKey}` },
-      body: JSON.stringify({
-        model: settings.model || 'auto',
-        temperature: 0,
-        messages: [
-          { role: 'system', content: buildPrompt(settings.currency, today) },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: 'Read this receipt and return the JSON.' },
-              { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } },
-            ],
-          },
-        ],
-      }),
-    },
-    120000,
-  );
-  if (!res.ok) throw await readError(res);
+  const user =
+    input.kind === 'text'
+      ? textMessage(input)
+      : [
+          { type: 'text', text: 'Read this receipt and return the JSON.' },
+          { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${input.base64}` } },
+        ];
+  const body = JSON.stringify({
+    model: settings.model || 'auto',
+    temperature: 0,
+    messages: [
+      { role: 'system', content: buildPrompt(settings.currency, today) },
+      { role: 'user', content: user },
+    ],
+  });
+  let res: Response | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    res = await fetchWithTimeout(
+      endpoint(settings.baseUrl, '/chat/completions'),
+      { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.apiKey}` }, body },
+      opts.timeoutMs ?? (input.kind === 'text' ? 40000 : 90000),
+      'FreeLLMAPI',
+      opts.signal,
+    );
+    if (res.ok || ![429, 500, 502, 503].includes(res.status) || attempt === 1) break;
+    await sleep(2500);
+  }
+  if (!res || !res.ok) throw await readError(res!);
   const data = await res.json();
   const content = data?.choices?.[0]?.message?.content;
   const text = Array.isArray(content) ? content.map((c: { text?: string }) => c?.text ?? '').join('') : String(content ?? '');
@@ -314,43 +350,63 @@ function geminiModelPath(model: string) {
 
 export async function extractViaGemini(
   settings: Settings,
-  imageBase64: string,
+  input: ReceiptInput,
   base: string = GEMINI_BASE,
+  opts: ExtractOptions = {},
 ): Promise<ExtractionResult> {
   const key = settings.geminiKey.trim();
   if (!key) throw new AiError('Add your Gemini API key first.', 'Get a free key at aistudio.google.com/apikey, then paste it in Settings.');
   const today = toISODate(new Date());
-  const res = await fetchWithTimeout(
-    `${base}/${geminiModelPath(settings.geminiModel)}:generateContent`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: buildPrompt(settings.currency, today) }] },
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { text: 'Read this receipt and return the JSON.' },
-              { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } },
-            ],
-          },
-        ],
-        generationConfig: { temperature: 0, responseMimeType: 'application/json' },
-      }),
-    },
-    120000,
-    'Gemini',
-  );
-  if (!res.ok) throw await readGeminiError(res);
+  const parts =
+    input.kind === 'text'
+      ? [{ text: textMessage(input) }]
+      : [{ text: 'Read this receipt and return the JSON.' }, { inlineData: { mimeType: 'image/jpeg', data: input.base64 } }];
+
+  // "low" thinking is much faster and plenty for reading a receipt. If a model
+  // ever rejects the setting, the request is repeated without it.
+  let useThinking = true;
+  let res: Response | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const generationConfig: Record<string, unknown> = { temperature: 0, responseMimeType: 'application/json' };
+    if (useThinking) generationConfig.thinkingConfig = { thinkingLevel: 'low' };
+    res = await fetchWithTimeout(
+      `${base}/${geminiModelPath(settings.geminiModel)}:generateContent`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: buildPrompt(settings.currency, today) }] },
+          contents: [{ role: 'user', parts }],
+          generationConfig,
+        }),
+      },
+      opts.timeoutMs ?? (input.kind === 'text' ? 40000 : 90000),
+      'Gemini',
+      opts.signal,
+    );
+    if (res.ok) break;
+    if (res.status === 400 && useThinking) {
+      const msg = await res.clone().text().catch(() => '');
+      if (/think/i.test(msg)) {
+        useThinking = false;
+        continue;
+      }
+    }
+    if ([429, 500, 503].includes(res.status) && attempt < 2) {
+      await sleep(attempt === 0 ? 2000 : 5000);
+      continue;
+    }
+    break;
+  }
+  if (!res || !res.ok) throw await readGeminiError(res!);
   const data = await res.json();
   const cand = data?.candidates?.[0];
   if (!cand) {
     const blocked = data?.promptFeedback?.blockReason;
-    throw new AiError(blocked ? `Gemini refused the image (${blocked}).` : 'Gemini returned an empty answer.', 'Try again with a clearer photo.');
+    throw new AiError(blocked ? `Gemini refused the receipt (${blocked}).` : 'Gemini returned an empty answer.', 'Try again with a clearer photo.');
   }
-  const parts: { text?: string; thought?: boolean }[] = cand.content?.parts ?? [];
-  const text = parts.filter((p) => !p.thought).map((p) => p.text ?? '').join('');
+  const out: { text?: string; thought?: boolean }[] = cand.content?.parts ?? [];
+  const text = out.filter((p) => !p.thought).map((p) => p.text ?? '').join('');
   if (!text && cand.finishReason === 'MAX_TOKENS') {
     throw new AiError('The receipt was too long for one answer.', 'Photograph it in two halves and scan each one.');
   }
@@ -379,8 +435,14 @@ export async function testGemini(settings: Settings, base: string = GEMINI_BASE)
 
 // ---------- dispatch ----------
 
-export function extractReceipt(settings: Settings, imageBase64: string): Promise<ExtractionResult> {
-  return settings.provider === 'freellmapi' ? extractViaFreeLLM(settings, imageBase64) : extractViaGemini(settings, imageBase64);
+export function extractReceipt(settings: Settings, input: ReceiptInput, opts: ExtractOptions = {}): Promise<ExtractionResult> {
+  return settings.provider === 'freellmapi'
+    ? extractViaFreeLLM(settings, input, opts)
+    : extractViaGemini(settings, input, GEMINI_BASE, opts);
+}
+
+export function hasAiKey(settings: Settings): boolean {
+  return settings.provider === 'freellmapi' ? !!settings.apiKey.trim() : !!settings.geminiKey.trim();
 }
 
 export function testConnection(settings: Settings): Promise<string> {

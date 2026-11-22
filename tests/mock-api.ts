@@ -60,7 +60,7 @@ server.listen(0, async () => {
   try {
     assert.match(await testConnection(settings), /2 models/);
 
-    const r = await extractReceipt(settings, 'AAAA');
+    const r = await extractReceipt(settings, { kind: 'image', base64: 'AAAA' });
     assert.equal(r.provider, 'google');
     assert.equal(r.model, 'gemini-2.5-flash');
     assert.equal(r.draft.store, 'Lulu Hypermarket');
@@ -73,13 +73,13 @@ server.listen(0, async () => {
     console.log('  ok   scan succeeds and reads provider headers');
 
     mode = 'novision';
-    await assert.rejects(extractReceipt(settings, 'AAAA'), /No vision model/);
+    await assert.rejects(extractReceipt(settings, { kind: 'image', base64: 'AAAA' }), /No vision model/);
     console.log('  ok   422 no_vision_model gives a helpful message');
 
-    await assert.rejects(extractReceipt({ ...settings, apiKey: 'freellmapi-wrong' }, 'AAAA'), /rejected the API key/);
+    await assert.rejects(extractReceipt({ ...settings, apiKey: 'freellmapi-wrong' }, { kind: 'image', base64: 'AAAA' }), /rejected the API key/);
     console.log('  ok   bad key is explained');
 
-    await assert.rejects(extractReceipt({ ...settings, baseUrl: 'http://127.0.0.1:1/v1' }, 'AAAA'), /Couldn't reach FreeLLMAPI/);
+    await assert.rejects(extractReceipt({ ...settings, baseUrl: 'http://127.0.0.1:1/v1' }, { kind: 'image', base64: 'AAAA' }), /Couldn't reach FreeLLMAPI/);
     console.log('  ok   unreachable server is explained');
     console.log('\nAPI tests passed');
   } finally {

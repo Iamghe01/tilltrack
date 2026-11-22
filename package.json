@@ -32,7 +32,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "tsx tests/run.ts && tsx tests/mock-api.ts && tsx tests/mock-gemini.ts"
+    "test": "tsx tests/run.ts && tsx tests/local.test.ts && tsx tests/mock-api.ts && tsx tests/mock-gemini.ts"
   },
   "private": true
 }
