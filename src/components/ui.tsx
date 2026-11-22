@@ -3,7 +3,6 @@ import type { ComponentProps, ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -12,6 +11,7 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../lib/theme';
 
@@ -21,10 +21,11 @@ export function Screen({ children, scroll = true, padTop = true }: { children: R
   const insets = useSafeAreaInsets();
   const pad = { paddingTop: padTop ? insets.top + 12 : 12, paddingBottom: 32, paddingHorizontal: 16 };
   if (!scroll) return <View style={[styles.screen, pad]}>{children}</View>;
+  // Scrolls the focused input above the keyboard, so you can always see what you type.
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={pad} keyboardShouldPersistTaps="handled">
+    <KeyboardAwareScrollView style={styles.screen} contentContainerStyle={pad} keyboardShouldPersistTaps="handled" bottomOffset={90}>
       {children}
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

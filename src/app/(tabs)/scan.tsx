@@ -17,7 +17,7 @@ type Step = 'idle' | ScanStage | 'error';
 
 const STAGE_TEXT: Record<ScanStage, [string, string]> = {
   preparing: ['Preparing the photo…', ''],
-  reading: ['Reading the text on your phone…', 'This takes about a second and works offline.'],
+  reading: ['Reading the receipt…', 'Your phone reads the text in a second or two, offline.'],
   ai: ['Tidying up the items…', 'The AI is matching names, prices and categories. Usually 3–10 seconds.'],
   'photo-ai': ['Reading the photo with AI…', 'The text was hard to read, so the AI is looking at the whole photo. This can take up to a minute.'],
 };
@@ -74,7 +74,10 @@ export default function Scan() {
       const res = await runScan(db, settings, img, setStep, ctrl.signal);
       if (ctrl.signal.aborted) return;
       res.draft.image_uri = img.uri;
-      setPendingDraft(res.draft, res.warnings, res.info);
+      res.background?.then((b) => {
+        if (b.ok) b.draft.image_uri = img.uri;
+      });
+      setPendingDraft(res.draft, res.warnings, res.info, res.background);
       setStep('idle');
       setPreview(null);
       router.push({ pathname: '/receipt/[id]', params: { id: 'new' } });
@@ -110,6 +113,7 @@ export default function Scan() {
   async function manual() {
     const settings = await loadSettings(db);
     setPendingDraft({
+      vat_included: settings.pricesIncludeVat !== 0,
       store: null,
       date: toISODate(new Date()),
       time: null,

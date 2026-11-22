@@ -37,11 +37,13 @@ Return ONLY one JSON object, no markdown and no commentary, with this shape:
       "quantity": number,
       "unit": "pcs" | "kg" | "g" | "L" | "ml" | null,
       "unit_price": number | null,
-      "total_price": number
+      "total_price": number,
+      "pieces": number | null
     }
   ],
   "subtotal": number | null,
   "tax": number | null,
+  "vat_included": boolean,
   "discount": number | null,
   "total": number | null,
   "payment_method": "cash" | "card" | "other" | null
@@ -50,7 +52,8 @@ Return ONLY one JSON object, no markdown and no commentary, with this shape:
 Rules:
 - One entry per purchased product line. Do NOT list subtotal, VAT, total, change, cash given, loyalty points or card lines as items.
 - Write item names as clear, readable product names. Expand till abbreviations and keep the brand and pack size, e.g. "ALM FF MILK 1L" becomes "Almarai Full Fat Milk 1L". Use the same name every time for the same product.
-- For weighed goods, quantity is the weight and unit is "kg" (e.g. 0.845 kg tomatoes).
+- For weighed goods, quantity is the weight, unit is "kg" and unit_price is the price per kg (e.g. 0.845 kg tomatoes at 4.95/kg). If the number of pieces is printed, put it in "pieces"; otherwise null.
+- "tax" is the VAT amount printed on the receipt. Set "vat_included" to true when the item prices already include VAT (the receipt says "VAT incl.", "inclusive of VAT", or the item lines add up to the total). Set it to false only when VAT is added on top of the item lines.
 - If a discount belongs to one line, subtract it from that line's total_price. Put whole-receipt discounts in "discount" as a positive number.
 - total_price is what was paid for the line. unit_price is the price for one unit.
 - All money values are plain numbers with no currency symbols or thousands separators.
@@ -124,6 +127,7 @@ export function parseReceiptJson(
     if (total == null) continue;
     if (unitPrice == null && quantity > 0) unitPrice = round2(total / quantity);
     const unit = str(r.unit);
+    const pieces = num(r.pieces);
     items.push({
       name,
       category: normalizeCategory(r.category),
@@ -131,6 +135,7 @@ export function parseReceiptJson(
       unit: unit && unit !== 'pcs' ? unit : null,
       unit_price: unitPrice,
       total_price: round2(total),
+      pieces: pieces && pieces > 0 ? Math.round(pieces) : null,
     });
   }
   if (!items.length) throw new AiError('No items were found on the receipt.', 'Try a clearer, closer photo in good light.');
@@ -159,6 +164,9 @@ export function parseReceiptJson(
   if (str(raw.date) !== date) warnings.push("The date wasn't clear, so today's date was used. Change it if that's wrong.");
 
   const pm = str(raw.payment_method);
+  // VAT included in prices? Trust the AI if it says so; otherwise check whether the lines add up to the total.
+  const vatIncluded =
+    typeof raw.vat_included === 'boolean' ? raw.vat_included : Math.abs(itemsSum - total) <= Math.abs(itemsSum + (tax ?? 0) - total);
   return {
     draft: {
       store: str(raw.store),
@@ -173,6 +181,7 @@ export function parseReceiptJson(
       image_uri: null,
       note: null,
       source: 'scan',
+      vat_included: vatIncluded,
       items,
     },
     warnings,

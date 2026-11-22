@@ -2,7 +2,7 @@
 // before scanning anything. Every sample receipt carries SAMPLE_NOTE, so it
 // can be removed again in one tap.
 import type { DraftItem, DraftReceipt } from './db';
-import { addDays, round2, toISODate } from './stats';
+import { addDays, round2, toISODate, vatFromInclusive } from './stats';
 
 export const SAMPLE_NOTE = 'Sample data';
 
@@ -65,11 +65,19 @@ export function buildSampleReceipts(today: Date = new Date(), days = 120): Draft
         const qty = p.unit === 'kg' ? round2(0.6 + rand() * 1.2) : lo + Math.floor(rand() * (hi - lo + 1));
         // Prices drift a little over time.
         const unitPrice = round2(p.price * (0.92 + rand() * 0.16));
-        items.push({ name: p.name, category: p.category, quantity: qty, unit: p.unit ?? null, unit_price: unitPrice, total_price: round2(unitPrice * qty) });
+        items.push({
+          name: p.name,
+          category: p.category,
+          quantity: qty,
+          unit: p.unit ?? null,
+          unit_price: unitPrice,
+          total_price: round2(unitPrice * qty),
+          pieces: p.unit === 'kg' ? Math.max(1, Math.round(qty * (p.name === 'Bananas' ? 7 : 6))) : null,
+        });
       }
       if (items.length) {
         const subtotal = round2(items.reduce((s, i) => s + i.total_price, 0));
-        const tax = round2(subtotal * 0.05);
+        const tax = vatFromInclusive(subtotal, 5); // UAE shelf prices already include 5% VAT
         receipts.push(
           base(date, STORES[Math.floor(rand() * STORES.length)], items, subtotal, tax, `${10 + Math.floor(rand() * 11)}:${String(Math.floor(rand() * 60)).padStart(2, '0')}`),
         );
@@ -80,7 +88,7 @@ export function buildSampleReceipts(today: Date = new Date(), days = 120): Draft
       const litres = round2(38 + rand() * 12);
       const price = 2.58;
       const total = round2(litres * price);
-      receipts.push(base(date, 'ENOC', [{ name: 'Special 95 Petrol', category: 'Fuel & Transport', quantity: litres, unit: 'L', unit_price: price, total_price: total }], total, 0, '08:15'));
+      receipts.push(base(date, 'ENOC', [{ name: 'Special 95 Petrol', category: 'Fuel & Transport', quantity: litres, unit: 'L', unit_price: price, total_price: total }], total, vatFromInclusive(total, 5), '08:15'));
     }
     // Eating out on some weekends.
     const dow = new Date(`${date}T12:00:00`).getDay();
@@ -89,7 +97,7 @@ export function buildSampleReceipts(today: Date = new Date(), days = 120): Draft
         { name: 'Chicken Shawarma Plate', category: 'Dining Out', quantity: 2, unit: null, unit_price: 24, total_price: 48 },
         { name: 'Fresh Orange Juice', category: 'Dining Out', quantity: 2, unit: null, unit_price: 12, total_price: 24 },
       ];
-      receipts.push(base(date, 'Al Mallah Cafeteria', items, 72, 3.6, '20:40'));
+      receipts.push(base(date, 'Al Mallah Cafeteria', items, 72, vatFromInclusive(72, 5), '20:40'));
     }
   }
   return receipts;
@@ -103,7 +111,8 @@ function base(date: string, store: string, items: DraftItem[], subtotal: number,
     subtotal,
     tax,
     discount: null,
-    total: round2(subtotal + tax),
+    total: subtotal, // VAT is already inside the item prices
+    vat_included: true,
     currency: 'AED',
     payment_method: 'card',
     image_uri: null,

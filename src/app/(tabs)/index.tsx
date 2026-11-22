@@ -15,6 +15,7 @@ import {
   storeTotals,
   summarizeItems,
   trend,
+  vatInRange,
   type Period,
 } from '../../lib/stats';
 import { loadSampleData } from '../../lib/db';
@@ -50,14 +51,14 @@ export default function Overview() {
     // Bars end at the period being viewed, so paging back moves the chart too.
     const bars = trend(receipts, period, period === 'year' ? 4 : 6, parseISODate(range.end), ws);
     const tripCount = receipts.filter((r) => inRange(r.date, range)).length;
-    const units = items.filter((i) => inRange(i.date, range) && i.total_price > 0).reduce((s, i) => s + (i.unit ? 1 : i.quantity), 0);
     const stores = storeTotals(receipts, range).slice(0, 3);
     const rebuy = summarizeItems(items)
       .filter((s) => s.status === 'due' || s.status === 'overdue' || s.status === 'soon')
       .sort((a, b) => b.daysSinceLast / (b.avgGapDays || 1) - a.daysSinceLast / (a.avgGapDays || 1))
       .slice(0, 5);
     const monthSpend = spendInRange(receipts, periodRange('month', 0, new Date(), ws));
-    return { range, total, prev, partial, cats, extra, bars, tripCount, units, stores, rebuy, monthSpend };
+    const vat = vatInRange(receipts, range);
+    return { range, total, prev, partial, vat, cats, extra, bars, tripCount, stores, rebuy, monthSpend };
   }, [receipts, items, period, offset, ws]);
 
   if (loaded && receipts.length === 0) {
@@ -122,8 +123,8 @@ export default function Overview() {
         ) : null}
         <View style={[styles.row, { marginTop: 14, gap: 10 }]}>
           <Stat label="Trips" value={String(data.tripCount)} />
-          <Stat label="Items" value={String(Math.round(data.units))} />
           <Stat label="Avg / trip" value={data.tripCount ? money(data.total / data.tripCount, '') : '—'} />
+          <Stat label="VAT paid" value={money(data.vat.vat, '')} sub={data.total > 0 ? `${((data.vat.vat / data.total) * 100).toFixed(1)}% of spend` : undefined} />
         </View>
 
         {/* Trend bars */}

@@ -96,12 +96,12 @@ export default function ItemDetail() {
           </View>
         </Card>
 
-        <SectionTitle>Price</SectionTitle>
+        <SectionTitle>{s.unit === 'kg' ? 'Price per kg' : 'Price'}</SectionTitle>
         <Card>
           <View style={[styles.row, { gap: 10 }]}>
-            <Stat label="Latest" value={money(s.lastPrice, '')} sub={trend ? `${trend.up ? '▲' : '▼'} ${Math.abs(trend.pct).toFixed(0)}% vs last time` : cur} />
-            <Stat label="Average" value={money(s.avgPrice, '')} />
-            <Stat label="Lowest" value={money(s.minPrice, '')} />
+            <Stat label={s.unit === 'kg' ? 'Latest /kg' : 'Latest'} value={money(s.lastPrice, '')} sub={trend ? `${trend.up ? '▲' : '▼'} ${Math.abs(trend.pct).toFixed(0)}% vs last time` : cur} />
+            <Stat label={s.unit === 'kg' ? 'Avg /kg' : 'Average'} value={money(s.avgPrice, '')} />
+            <Stat label={s.unit === 'kg' ? 'Lowest /kg' : 'Lowest'} value={money(s.minPrice, '')} />
           </View>
           {prices.length > 1 ? (
             <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 90, marginTop: 14 }}>

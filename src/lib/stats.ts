@@ -22,6 +22,8 @@ export interface ReceiptRow {
   store: string | null;
   date: string;
   total: number;
+  tax?: number | null;
+  vat_included?: number | null;
 }
 
 // ---------- dates ----------
@@ -304,4 +306,21 @@ export function comparableRange(current: Range, previous: Range, today: string =
   const elapsed = daysBetween(current.start, today);
   const end = addDays(previous.start, elapsed);
   return { range: { ...previous, end: end < previous.end ? end : previous.end }, partial: true };
+}
+
+/** VAT recorded on receipts in a range (whether it was included in prices or added on top). */
+export function vatInRange(receipts: ReceiptRow[], r: Range): { vat: number; receipts: number } {
+  let vat = 0;
+  let n = 0;
+  for (const x of receipts) {
+    if (!inRange(x.date, r) || !x.tax) continue;
+    vat += x.tax;
+    n++;
+  }
+  return { vat: round2(vat), receipts: n };
+}
+
+/** VAT contained in a VAT-inclusive amount, e.g. 105 at 5% contains 5. */
+export function vatFromInclusive(amount: number, ratePct: number): number {
+  return ratePct > 0 ? round2((amount * ratePct) / (100 + ratePct)) : 0;
 }

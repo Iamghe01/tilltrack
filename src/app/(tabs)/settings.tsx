@@ -23,6 +23,7 @@ export default function SettingsScreen() {
   const db = useSQLiteContext();
   const [s, setS] = useState<Settings>(DEFAULT_SETTINGS);
   const [budget, setBudget] = useState('');
+  const [vatRate, setVatRate] = useState('5');
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [testing, setTesting] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -38,6 +39,7 @@ export default function SettingsScreen() {
       loadSettings(db).then((x) => {
         setS(x);
         setBudget(x.monthlyBudget ? String(x.monthlyBudget) : '');
+        setVatRate(String(x.vatRate));
         setTimeout(() => (ready.current = true), 0);
       });
       countSampleReceipts(db, SAMPLE_NOTE).then(setSampleCount);
@@ -56,7 +58,7 @@ export default function SettingsScreen() {
     const t = setTimeout(() => onSave(), 600);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s, budget]);
+  }, [s, budget, vatRate]);
 
   function current(): Settings {
     const b = Number(budget.replace(',', '.'));
@@ -69,6 +71,7 @@ export default function SettingsScreen() {
       model: s.model.trim() || 'auto',
       currency: s.currency.trim().toUpperCase() || 'AED',
       monthlyBudget: Number.isFinite(b) && b > 0 ? b : 0,
+      vatRate: Math.max(0, Number(vatRate.replace(',', '.')) || 0),
     };
   }
 
@@ -228,6 +231,32 @@ export default function SettingsScreen() {
             style={{ flex: 1 }}
           />
         </View>
+        <View style={[styles.row, { gap: 10 }]}>
+          <Field
+            label="VAT rate %"
+            value={vatRate}
+            onChangeText={(v) => {
+              setVatRate(v);
+              setSaved(false);
+            }}
+            keyboardType="decimal-pad"
+            style={{ flex: 1 }}
+          />
+          <View style={{ flex: 1, marginBottom: 12 }}>
+            <Text style={styles.label}>Shop prices</Text>
+            <Segmented
+              value={String(s.pricesIncludeVat) as '0' | '1'}
+              onChange={(v) => set({ pricesIncludeVat: Number(v) })}
+              options={[
+                { value: '1', label: 'Incl. VAT' },
+                { value: '0', label: '+ VAT' },
+              ]}
+            />
+          </View>
+        </View>
+        <Text style={[styles.hint, { marginTop: -6, marginBottom: 10 }]}>
+          Default for new receipts. In the UAE, shelf prices include 5% VAT. Each receipt can still be switched.
+        </Text>
         <Text style={styles.label}>Week starts on</Text>
         <Segmented
           value={String(s.weekStartsOn) as '0' | '1' | '6'}

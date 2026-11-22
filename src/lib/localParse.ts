@@ -185,6 +185,8 @@ export function parseRowsLocally(
   const total = findAmount(rows, /\b(grand total|total|net amount|amount due|net total)\b/i) ?? itemsSum;
   const tax = findAmount(rows, /\b(vat|tax)\b/i);
   const date = findDate(rows, today);
+  const vatIncluded =
+    rows.some((r) => /incl(usive|\.|uding)?\s*(of\s*)?vat|vat\s*incl/i.test(r)) || tax == null || Math.abs(total - itemsSum) <= Math.abs(total - itemsSum - tax);
 
   const warnings: string[] = ['Read offline from the photo. Check the item names and prices before saving.'];
   if (!date) warnings.push("The date wasn't clear, so today's date was used.");
@@ -210,6 +212,7 @@ export function parseRowsLocally(
       image_uri: null,
       note: null,
       source: 'scan',
+      vat_included: vatIncluded,
       items,
     },
     warnings,

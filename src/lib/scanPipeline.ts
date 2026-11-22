@@ -13,7 +13,13 @@ export interface ScanOutcome {
   draft: DraftReceipt;
   warnings: string[];
   info: string; // shown on the review screen, e.g. "Read on your phone, tidied by Gemini in 4.2 s"
+  /** When set, the AI is still checking in the background; the review screen shows its result when it arrives. */
+  background?: Promise<BackgroundCheck>;
 }
+
+export type BackgroundCheck =
+  | { ok: true; draft: DraftReceipt; warnings: string[]; info: string }
+  | { ok: false; reason: string };
 
 export async function runScan(
   db: SQLiteDatabase,
@@ -53,23 +59,37 @@ export async function runScan(
     }
   }
 
-  // 2b. Text + AI (fast): the AI only has to tidy up text, not look at a photo.
+  // 2b. Text + AI: open the phone result straight away, and let the AI check it
+  // in the background. You never wait for the AI when the phone could read it.
   if (local && hasAiKey(settings) && settings.scanMode !== 'offline') {
+    if (local.draft.items.length) {
+      const phoneSecs = secs();
+      const background: Promise<BackgroundCheck> = extractReceipt(settings, { kind: 'text', rows, knownNames }, { timeoutMs: 45000 })
+        .then(async (ai) => {
+          await logScan(db, { mode: 'text+ai', ms: Date.now() - t0, ok: true, items: ai.draft.items.length }).catch(() => {});
+          return { ok: true as const, draft: ai.draft, warnings: ai.warnings, info: `Checked by ${label(ai)} in ${secs()} s` };
+        })
+        .catch(async (e) => {
+          const why = e instanceof AiError ? e.message : String(e);
+          await logScan(db, { mode: 'offline-fallback', ms: Date.now() - t0, ok: true, items: local.draft.items.length, message: why }).catch(() => {});
+          return { ok: false as const, reason: why };
+        });
+      return {
+        draft: local.draft,
+        warnings: local.warnings.filter((w) => !w.startsWith('Read offline')),
+        info: `Read on your phone in ${phoneSecs} s`,
+        background,
+      };
+    }
+    // The phone found text but no items: ask the AI and wait (usually a few seconds).
     onStage('ai');
     try {
       const ai = await extractReceipt(settings, { kind: 'text', rows, knownNames }, { timeoutMs: 35000, signal });
-      return finish('text+ai', { draft: ai.draft, warnings: ai.warnings, info: `Read on your phone, tidied by ${label(ai)} in ${secs()} s` });
-    } catch (e) {
-      const why = e instanceof AiError ? e.message : String(e);
-      if (signal?.aborted) throw e;
-      if (local.draft.items.length) {
-        return finish(
-          'offline-fallback',
-          { ...local, warnings: [`The AI couldn't help this time (${why}), so the receipt was read on your phone instead.`, ...local.warnings], info: `Read on your phone in ${secs()} s` },
-          true,
-          why,
-        );
+      if (ai.draft.items.length) {
+        return finish('text+ai', { draft: ai.draft, warnings: ai.warnings, info: `Read on your phone, tidied by ${label(ai)} in ${secs()} s` });
       }
+    } catch (e) {
+      if (signal?.aborted) throw e;
       // Fall through to the photo, which can work when the text was too messy.
     }
   }

@@ -14,6 +14,8 @@ export interface Settings {
   model: string; // "auto" lets the router pick a vision model
   currency: string;
   monthlyBudget: number; // 0 = no budget
+  vatRate: number; // percent, 5 in the UAE
+  pricesIncludeVat: number; // 1 = shelf prices already include VAT (UAE norm), 0 = VAT added at the till
   weekStartsOn: number; // 0 Sun, 1 Mon, 6 Sat
 }
 
@@ -27,6 +29,8 @@ export const DEFAULT_SETTINGS: Settings = {
   model: 'auto',
   currency: 'AED',
   monthlyBudget: 0,
+  vatRate: 5,
+  pricesIncludeVat: 1,
   weekStartsOn: 1,
 };
 

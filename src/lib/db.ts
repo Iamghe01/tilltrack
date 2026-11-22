@@ -17,6 +17,7 @@ export interface Receipt {
   image_uri: string | null;
   note: string | null;
   source: 'scan' | 'manual';
+  vat_included: number;
   created_at: string;
 }
 
@@ -30,6 +31,7 @@ export interface ReceiptItem {
   unit: string | null;
   unit_price: number | null;
   total_price: number;
+  pieces: number | null;
 }
 
 /** Item before it is saved (from the AI or from the editor). */
@@ -40,6 +42,8 @@ export interface DraftItem {
   unit: string | null;
   unit_price: number | null;
   total_price: number;
+  /** For weighed goods (unit "kg"): how many pieces, e.g. 2 apples weighing 0.65 kg. */
+  pieces?: number | null;
 }
 
 export interface DraftReceipt {
@@ -55,7 +59,14 @@ export interface DraftReceipt {
   image_uri: string | null;
   note: string | null;
   source: 'scan' | 'manual';
+  /** true when item prices already include VAT (normal in UAE shops); the VAT amount is then for information only. */
+  vat_included?: boolean;
   items: DraftItem[];
+}
+
+async function addColumn(db: SQLiteDatabase, table: string, column: string, ddl: string) {
+  const cols = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+  if (!cols.some((c) => c.name === column)) await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
 }
 
 export async function migrate(db: SQLiteDatabase) {
@@ -106,6 +117,9 @@ export async function migrate(db: SQLiteDatabase) {
       value TEXT
     );
   `);
+  // Added in build 3
+  await addColumn(db, 'items', 'pieces', 'pieces REAL');
+  await addColumn(db, 'receipts', 'vat_included', 'vat_included INTEGER NOT NULL DEFAULT 1');
 }
 
 // ---------- receipts ----------
@@ -125,18 +139,19 @@ export async function saveReceipt(db: SQLiteDatabase, draft: DraftReceipt, exist
       draft.payment_method,
       draft.image_uri,
       draft.note,
+      draft.vat_included === false ? 0 : 1,
     ];
     if (existingId) {
       await db.runAsync(
         `UPDATE receipts SET store=?, date=?, time=?, subtotal=?, tax=?, discount=?, total=?, currency=?,
-         payment_method=?, image_uri=?, note=? WHERE id=?`,
+         payment_method=?, image_uri=?, note=?, vat_included=? WHERE id=?`,
         [...vals, existingId],
       );
       await db.runAsync('DELETE FROM items WHERE receipt_id=?', [existingId]);
     } else {
       const res = await db.runAsync(
         `INSERT INTO receipts (store, date, time, subtotal, tax, discount, total, currency, payment_method,
-         image_uri, note, source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+         image_uri, note, vat_included, source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [...vals, draft.source],
       );
       id = res.lastInsertRowId;
@@ -145,9 +160,9 @@ export async function saveReceipt(db: SQLiteDatabase, draft: DraftReceipt, exist
       const name = it.name.trim();
       if (!name) continue;
       await db.runAsync(
-        `INSERT INTO items (receipt_id, name, item_key, category, quantity, unit, unit_price, total_price)
-         VALUES (?,?,?,?,?,?,?,?)`,
-        [id, name, normalizeKey(name), it.category, it.quantity, it.unit, it.unit_price, round2(it.total_price)],
+        `INSERT INTO items (receipt_id, name, item_key, category, quantity, unit, unit_price, total_price, pieces)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [id, name, normalizeKey(name), it.category, it.quantity, it.unit, it.unit_price, round2(it.total_price), it.pieces ?? null],
       );
     }
   });
@@ -183,7 +198,7 @@ export async function findDuplicate(db: SQLiteDatabase, draft: DraftReceipt) {
 // ---------- rows for statistics ----------
 
 export async function allReceiptRows(db: SQLiteDatabase): Promise<ReceiptRow[]> {
-  return db.getAllAsync<ReceiptRow>('SELECT id, store, date, total FROM receipts');
+  return db.getAllAsync<ReceiptRow>('SELECT id, store, date, total, tax, vat_included FROM receipts');
 }
 
 export async function allItemRows(db: SQLiteDatabase): Promise<ItemRow[]> {
@@ -218,13 +233,13 @@ function csvCell(v: unknown): string {
 
 export async function exportCsv(db: SQLiteDatabase): Promise<string> {
   const rows = await db.getAllAsync<Record<string, unknown>>(
-    `SELECT r.date, r.time, r.store, i.name AS item, i.category, i.quantity, i.unit, i.unit_price, i.total_price,
-            r.total AS receipt_total, r.tax AS receipt_tax, r.currency, r.payment_method, r.id AS receipt_id
+    `SELECT r.date, r.time, r.store, i.name AS item, i.category, i.quantity, i.unit, i.pieces, i.unit_price, i.total_price,
+            r.total AS receipt_total, r.tax AS receipt_vat, r.vat_included, r.currency, r.payment_method, r.id AS receipt_id
      FROM items i JOIN receipts r ON r.id=i.receipt_id ORDER BY r.date, r.id, i.id`,
   );
   const header = [
-    'date', 'time', 'store', 'item', 'category', 'quantity', 'unit', 'unit_price', 'total_price',
-    'receipt_total', 'receipt_tax', 'currency', 'payment_method', 'receipt_id',
+    'date', 'time', 'store', 'item', 'category', 'quantity', 'unit', 'pieces', 'unit_price', 'total_price',
+    'receipt_total', 'receipt_vat', 'vat_included', 'currency', 'payment_method', 'receipt_id',
   ];
   return [header.join(','), ...rows.map((r) => header.map((h) => csvCell(r[h])).join(','))].join('\n');
 }
