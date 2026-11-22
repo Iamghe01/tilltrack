@@ -81,6 +81,7 @@ export default function Receipts() {
           ))}
         </View>
       ))}
+      <View style={{ height: 70 }} />
     </Screen>
   );
 }

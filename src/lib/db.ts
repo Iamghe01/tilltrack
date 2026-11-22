@@ -112,6 +112,10 @@ export async function migrate(db: SQLiteDatabase) {
       items INTEGER NOT NULL DEFAULT 0,
       message TEXT
     );
+    CREATE TABLE IF NOT EXISTS item_types (
+      item_key TEXT PRIMARY KEY,
+      type TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT
@@ -314,4 +318,16 @@ export async function recentStores(db: SQLiteDatabase, n = 6): Promise<string[]>
     [n],
   );
   return rows.map((r) => r.store);
+}
+
+// ---------- item types you've set by hand ----------
+
+export async function typeOverrides(db: SQLiteDatabase): Promise<Map<string, string>> {
+  const rows = await db.getAllAsync<{ item_key: string; type: string }>('SELECT item_key, type FROM item_types');
+  return new Map(rows.map((r) => [r.item_key, r.type]));
+}
+
+export async function setItemType(db: SQLiteDatabase, itemKey: string, type: string | null) {
+  if (type) await db.runAsync('INSERT OR REPLACE INTO item_types (item_key, type) VALUES (?, ?)', [itemKey, type]);
+  else await db.runAsync('DELETE FROM item_types WHERE item_key = ?', [itemKey]);
 }

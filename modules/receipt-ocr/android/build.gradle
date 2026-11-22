@@ -23,4 +23,6 @@ android {
 dependencies {
   // Bundled model: works offline straight after install, no Play Services download.
   implementation 'com.google.mlkit:text-recognition:16.0.1'
+  // Google's document scanner screen: finds the receipt edges, flattens it and removes shadows.
+  implementation 'com.google.android.gms:play-services-mlkit-document-scanner:16.0.0'
 }

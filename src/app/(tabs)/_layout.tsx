@@ -2,6 +2,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs } from 'expo-router/tabs';
 import type { ComponentProps } from 'react';
 import type { ColorValue } from 'react-native';
+import { View } from 'react-native';
+import { AddButton } from '../../components/AddButton';
 import { theme } from '../../lib/theme';
 
 type Icon = ComponentProps<typeof Ionicons>['name'];
@@ -15,6 +17,7 @@ const tab = (title: string, icon: Icon, activeIcon: Icon) => ({
 
 export default function TabsLayout() {
   return (
+    <View style={{ flex: 1 }}>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -25,11 +28,13 @@ export default function TabsLayout() {
         sceneStyle: { backgroundColor: theme.bg },
       }}
     >
-      <Tabs.Screen name="index" options={tab('Overview', 'pie-chart-outline', 'pie-chart')} />
+      <Tabs.Screen name="index" options={tab('Overview', 'home-outline', 'home')} />
+      <Tabs.Screen name="categories" options={tab('Categories', 'pie-chart-outline', 'pie-chart')} />
       <Tabs.Screen name="items" options={tab('Items', 'basket-outline', 'basket')} />
-      <Tabs.Screen name="scan" options={tab('Scan', 'scan-outline', 'scan')} />
       <Tabs.Screen name="receipts" options={tab('Receipts', 'receipt-outline', 'receipt')} />
       <Tabs.Screen name="settings" options={tab('Settings', 'settings-outline', 'settings')} />
     </Tabs>
+    <AddButton />
+    </View>
   );
 }

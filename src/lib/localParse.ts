@@ -108,12 +108,45 @@ export function titleCase(s: string): string {
     });
 }
 
+const PRICE_ONLY = /^\s*(?:AED|Dhs?|د\.إ)?\s*-?\d{1,6}(?:[.,]\d{3})*[.,]\d{2}\s*(?:[A-Z]{1,2}|\*)?\s*$/i;
+
+/**
+ * Text copied from Google Lens often comes as columns: all the item names,
+ * then all the prices. This puts each name back next to its price.
+ */
+export function pairColumns(rows: string[]): string[] {
+  const out: string[] = [];
+  let i = 0;
+  while (i < rows.length) {
+    // A run of lines with words but no price...
+    let j = i;
+    while (j < rows.length && !PRICE_ONLY.test(rows[j]) && !PRICE_AT_END.test(rows[j])) j++;
+    // ...followed by a run of price-only lines.
+    let k = j;
+    while (k < rows.length && PRICE_ONLY.test(rows[k])) k++;
+    const names = rows.slice(i, j);
+    const prices = rows.slice(j, k);
+    if (prices.length >= 2 && names.length >= prices.length) {
+      // Line up from the bottom: extra lines at the top are usually headings.
+      const offset = names.length - prices.length;
+      out.push(...names.slice(0, offset));
+      for (let n = 0; n < prices.length; n++) out.push(`${names[offset + n]}    ${prices[n].trim()}`);
+      i = k;
+    } else {
+      out.push(...rows.slice(i, Math.max(j, i + 1)));
+      i = Math.max(j, i + 1);
+    }
+  }
+  return out;
+}
+
 export function parseRowsLocally(
   rows: string[],
   currency: string,
   history: Map<string, string> = new Map(),
   today: string = toISODate(new Date()),
 ): { draft: DraftReceipt; warnings: string[]; confidence: number } {
+  rows = pairColumns(rows.map((r) => r.trim()).filter(Boolean));
   const items: DraftItem[] = [];
   let pendingName: string | null = null;
 

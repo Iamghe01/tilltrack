@@ -324,3 +324,85 @@ export function vatInRange(receipts: ReceiptRow[], r: Range): { vat: number; rec
 export function vatFromInclusive(amount: number, ratePct: number): number {
   return ratePct > 0 ? round2((amount * ratePct) / (100 + ratePct)) : 0;
 }
+
+// ---------- types inside a category (e.g. Meat: chicken, beef, fish) ----------
+
+export interface TypeItemLine {
+  key: string;
+  name: string;
+  total: number;
+  qty: number; // pieces, or kg for weighed goods
+  unit: string | null;
+  times: number;
+}
+
+export interface TypeTotal {
+  type: string;
+  total: number;
+  prevTotal: number;
+  kg: number;
+  pcs: number;
+  times: number;
+  items: TypeItemLine[];
+}
+
+/** Spending inside one category for a period, split by type, with the previous period for comparison. */
+export function typeBreakdown(
+  items: ItemRow[],
+  category: string,
+  range: Range,
+  prevRange: Range,
+  typeOf: (name: string, category: string) => string,
+): TypeTotal[] {
+  const map = new Map<string, TypeTotal>();
+  const get = (t: string) => {
+    let v = map.get(t);
+    if (!v) {
+      v = { type: t, total: 0, prevTotal: 0, kg: 0, pcs: 0, times: 0, items: [] };
+      map.set(t, v);
+    }
+    return v;
+  };
+  for (const it of items) {
+    if (it.category !== category || it.total_price <= 0) continue;
+    const t = typeOf(it.name, it.category);
+    if (inRange(it.date, prevRange)) get(t).prevTotal += it.total_price;
+    if (!inRange(it.date, range)) continue;
+    const v = get(t);
+    v.total += it.total_price;
+    v.times += 1;
+    const kg = (it.unit ?? '').toLowerCase() === 'kg';
+    if (kg) v.kg += it.quantity;
+    else v.pcs += it.quantity;
+    let line = v.items.find((x) => x.key === it.item_key);
+    if (!line) {
+      line = { key: it.item_key, name: it.name, total: 0, qty: 0, unit: kg ? 'kg' : it.unit, times: 0 };
+      v.items.push(line);
+    }
+    line.total += it.total_price;
+    line.qty += it.quantity;
+    line.times += 1;
+  }
+  return [...map.values()]
+    .filter((v) => v.total > 0 || v.prevTotal > 0)
+    .map((v) => ({
+      ...v,
+      total: round2(v.total),
+      prevTotal: round2(v.prevTotal),
+      kg: Math.round(v.kg * 1000) / 1000,
+      pcs: round2(v.pcs),
+      items: v.items.map((l) => ({ ...l, total: round2(l.total), qty: Math.round(l.qty * 1000) / 1000 })).sort((a, b) => b.total - a.total),
+    }))
+    .sort((a, b) => b.total - a.total || b.prevTotal - a.prevTotal);
+}
+
+/** One category's spend for each of the last n periods (oldest first). */
+export function categoryTrend(items: ItemRow[], category: string, period: Period, count: number, anchor: Date, weekStartsOn = 1) {
+  const out: { label: string; total: number; range: Range }[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const r = periodRange(period, -i, anchor, weekStartsOn);
+    const total = items.filter((it) => it.category === category && inRange(it.date, r)).reduce((s, it) => s + it.total_price, 0);
+    out.push({ label: shortLabel(period, r), total: round2(total), range: r });
+  }
+  return out;
+}

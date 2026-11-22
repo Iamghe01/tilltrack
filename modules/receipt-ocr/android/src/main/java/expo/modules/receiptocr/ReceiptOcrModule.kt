@@ -1,6 +1,10 @@
 package expo.modules.receiptocr
 
+import android.app.Activity
 import android.net.Uri
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
@@ -17,9 +21,58 @@ import java.io.File
  */
 class ReceiptOcrModule : Module() {
   private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+  private var pendingScan: Promise? = null
+  private val scanRequestCode = 47021
 
   override fun definition() = ModuleDefinition {
     Name("ReceiptOcr")
+
+    // Opens Google's document scanner. Resolves with the JPEG page URIs, or an empty list if cancelled.
+    AsyncFunction("scanDocument") { pageLimit: Int, allowGallery: Boolean, promise: Promise ->
+      val activity = appContext.currentActivity
+      if (activity == null) {
+        promise.reject(CodedException("ERR_NO_ACTIVITY", "No screen to show the scanner on", null))
+        return@AsyncFunction
+      }
+      if (pendingScan != null) {
+        promise.reject(CodedException("ERR_BUSY", "The scanner is already open", null))
+        return@AsyncFunction
+      }
+      val options = GmsDocumentScannerOptions.Builder()
+        .setGalleryImportAllowed(allowGallery)
+        .setPageLimit(pageLimit.coerceIn(1, 5))
+        .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+        .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+        .build()
+      pendingScan = promise
+      GmsDocumentScanning.getClient(options)
+        .getStartScanIntent(activity)
+        .addOnSuccessListener { intentSender ->
+          try {
+            activity.startIntentSenderForResult(intentSender, scanRequestCode, null, 0, 0, 0)
+          } catch (e: Exception) {
+            pendingScan = null
+            promise.reject(CodedException("ERR_SCANNER", e.message ?: "Couldn't open the scanner", e))
+          }
+        }
+        .addOnFailureListener { e ->
+          pendingScan = null
+          promise.reject(CodedException("ERR_SCANNER_UNAVAILABLE", e.message ?: "The document scanner isn't available", e))
+        }
+    }
+
+    OnActivityResult { _, payload ->
+      if (payload.requestCode != scanRequestCode) return@OnActivityResult
+      val promise = pendingScan ?: return@OnActivityResult
+      pendingScan = null
+      if (payload.resultCode != Activity.RESULT_OK) {
+        promise.resolve(emptyList<String>())
+        return@OnActivityResult
+      }
+      val result = GmsDocumentScanningResult.fromActivityResultIntent(payload.data)
+      val uris = result?.pages?.map { it.imageUri.toString() } ?: emptyList()
+      promise.resolve(uris)
+    }
 
     AsyncFunction("recognize") { uriString: String, promise: Promise ->
       try {

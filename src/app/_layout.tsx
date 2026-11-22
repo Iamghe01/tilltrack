@@ -24,6 +24,9 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="receipt/[id]" options={{ title: 'Receipt' }} />
           <Stack.Screen name="item/[key]" options={{ title: 'Item' }} />
+          <Stack.Screen name="category/[name]" options={{ title: 'Category' }} />
+          <Stack.Screen name="scan" options={{ title: 'Scan a receipt' }} />
+          <Stack.Screen name="paste" options={{ title: 'Paste a receipt' }} />
         </Stack>
       </SQLiteProvider>
       </KeyboardProvider>

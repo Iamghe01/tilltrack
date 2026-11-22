@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Bar, Button, Card, Empty, H1, Ionicons, Pill, Screen, SectionTitle, Segmented, Stat, styles } from '../../components/ui';
 import { categoryColor } from '../../lib/categories';
-import { money, prettyDate } from '../../lib/format';
+import { money } from '../../lib/format';
 import {
   categoryTotals,
   comparableRange,
@@ -12,7 +12,6 @@ import {
   parseISODate,
   periodRange,
   spendInRange,
-  storeTotals,
   summarizeItems,
   trend,
   vatInRange,
@@ -51,14 +50,13 @@ export default function Overview() {
     // Bars end at the period being viewed, so paging back moves the chart too.
     const bars = trend(receipts, period, period === 'year' ? 4 : 6, parseISODate(range.end), ws);
     const tripCount = receipts.filter((r) => inRange(r.date, range)).length;
-    const stores = storeTotals(receipts, range).slice(0, 3);
     const rebuy = summarizeItems(items)
       .filter((s) => s.status === 'due' || s.status === 'overdue' || s.status === 'soon')
       .sort((a, b) => b.daysSinceLast / (b.avgGapDays || 1) - a.daysSinceLast / (a.avgGapDays || 1))
       .slice(0, 5);
     const monthSpend = spendInRange(receipts, periodRange('month', 0, new Date(), ws));
     const vat = vatInRange(receipts, range);
-    return { range, total, prev, partial, vat, cats, extra, bars, tripCount, stores, rebuy, monthSpend };
+    return { range, total, prev, partial, vat, cats, extra, bars, tripCount, rebuy, monthSpend };
   }, [receipts, items, period, offset, ws]);
 
   if (loaded && receipts.length === 0) {
@@ -174,81 +172,59 @@ export default function Overview() {
         </Card>
       ) : null}
 
+      {/* Top categories: tap to see what's inside */}
+      <SectionTitle right={<Pressable onPress={() => router.navigate('/categories')} hitSlop={8}><Text style={{ color: theme.accent, fontWeight: '700' }}>All</Text></Pressable>}>
+        Top categories
+      </SectionTitle>
+      <Card style={{ paddingVertical: 4 }}>
+        {data.cats.length === 0 ? <Text style={[styles.muted, { paddingVertical: 10 }]}>No purchases in this {period}.</Text> : null}
+        {data.cats.slice(0, 5).map((c, i) => (
+          <Pressable
+            key={c.category}
+            onPress={() => router.push({ pathname: '/category/[name]', params: { name: c.category, month: data.range.start.slice(0, 8) + '01' } })}
+            style={({ pressed }) => [{ paddingVertical: 10, borderTopWidth: i ? 1 : 0, borderTopColor: theme.border, opacity: pressed ? 0.7 : 1 }]}
+          >
+            <View style={[styles.row, { gap: 8 }]}>
+              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: categoryColor(c.category) }} />
+              <Text style={[styles.body, { flex: 1, fontWeight: '600' }]} numberOfLines={1}>{c.category}</Text>
+              <Text style={[styles.muted, { marginRight: 6 }]}>{data.total > 0 ? `${Math.round((c.total / data.total) * 100)}%` : ''}</Text>
+              <Text style={[styles.body, { fontWeight: '800', minWidth: 70, textAlign: 'right' }]}>{money(c.total, '')}</Text>
+              <Ionicons name="chevron-forward" size={16} color={theme.inkFaint} />
+            </View>
+            <View style={{ marginTop: 6, marginLeft: 18 }}>
+              <Bar fraction={c.total / (data.cats[0].total || 1)} color={categoryColor(c.category)} height={6} />
+            </View>
+          </Pressable>
+        ))}
+      </Card>
+
       {data.rebuy.length ? (
         <>
-          <SectionTitle right={<Pressable onPress={() => router.navigate('/items')}><Text style={{ color: theme.accent, fontWeight: '700' }}>All items</Text></Pressable>}>
+          <SectionTitle right={<Pressable onPress={() => router.navigate('/items')} hitSlop={8}><Text style={{ color: theme.accent, fontWeight: '700' }}>All items</Text></Pressable>}>
             Time to rebuy
           </SectionTitle>
-          {data.rebuy.map((s) => (
-            <Card key={s.key} onPress={() => router.push({ pathname: '/item/[key]', params: { key: s.key } })}>
-              <View style={[styles.row, { justifyContent: 'space-between' }]}>
-                <View style={{ flex: 1, paddingRight: 8 }}>
+          <Card style={{ paddingVertical: 4 }}>
+            {data.rebuy.slice(0, 3).map((s, i) => (
+              <Pressable
+                key={s.key}
+                onPress={() => router.push({ pathname: '/item/[key]', params: { key: s.key } })}
+                style={[styles.row, { gap: 10, paddingVertical: 10, borderTopWidth: i ? 1 : 0, borderTopColor: theme.border }]}
+              >
+                <View style={{ flex: 1 }}>
                   <Text style={[styles.body, { fontWeight: '700' }]} numberOfLines={1}>{s.name}</Text>
-                  <Text style={styles.muted}>
-                    You buy it every ~{Math.round(s.avgGapDays ?? 0)} days · last bought {s.daysSinceLast} days ago
-                  </Text>
+                  <Text style={styles.hint}>every ~{Math.round(s.avgGapDays ?? 0)} days · last {s.daysSinceLast} days ago</Text>
                 </View>
                 <Pill
                   text={s.status === 'overdue' ? 'Overdue' : s.status === 'due' ? 'Due' : 'Soon'}
                   color={s.status === 'soon' ? theme.warn : theme.accent}
                   bg={s.status === 'soon' ? theme.warnSoft : theme.accentSoft}
                 />
-              </View>
-            </Card>
-          ))}
-        </>
-      ) : null}
-
-      <SectionTitle>By category</SectionTitle>
-      <Card>
-        {data.cats.length === 0 ? (
-          <Text style={styles.muted}>No purchases in this {period}.</Text>
-        ) : (
-          <>
-            {data.cats.map((c) => (
-              <View key={c.category} style={{ marginBottom: 12 }}>
-                <View style={[styles.row, { justifyContent: 'space-between', marginBottom: 5 }]}>
-                  <View style={[styles.row, { gap: 8, flex: 1 }]}>
-                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: categoryColor(c.category) }} />
-                    <Text style={styles.body} numberOfLines={1}>{c.category}</Text>
-                  </View>
-                  <Text style={[styles.body, { fontWeight: '700' }]}>{money(c.total, cur)}</Text>
-                </View>
-                <Bar fraction={c.total / (data.cats[0].total || 1)} color={categoryColor(c.category)} />
-                <Text style={styles.hint}>
-                  {data.total > 0 ? `${Math.round((c.total / data.total) * 100)}% of spending` : ''}
-                </Text>
-              </View>
-            ))}
-            {Math.abs(data.extra) >= 0.01 ? (
-              <Text style={styles.hint}>
-                {data.extra > 0 ? `+ ${money(data.extra, cur)} VAT and fees` : `${money(data.extra, cur)} receipt discounts`} not tied to one item.
-              </Text>
-            ) : null}
-          </>
-        )}
-      </Card>
-
-      {data.stores.length ? (
-        <>
-          <SectionTitle>Top stores</SectionTitle>
-          <Card>
-            {data.stores.map((s, i) => (
-              <View key={s.store} style={[styles.row, { justifyContent: 'space-between', paddingVertical: 6, borderTopWidth: i ? 1 : 0, borderTopColor: theme.border }]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.body} numberOfLines={1}>{s.store}</Text>
-                  <Text style={styles.hint}>{s.visits} {s.visits === 1 ? 'visit' : 'visits'}</Text>
-                </View>
-                <Text style={[styles.body, { fontWeight: '700' }]}>{money(s.total, cur)}</Text>
-              </View>
+              </Pressable>
             ))}
           </Card>
         </>
       ) : null}
-
-      <Text style={[styles.hint, { textAlign: 'center', marginTop: 10 }]}>
-        {data.range.start === data.range.end ? '' : `${prettyDate(data.range.start)} – ${prettyDate(data.range.end)}`}
-      </Text>
+      <View style={{ height: 70 }} />
     </Screen>
   );
 }

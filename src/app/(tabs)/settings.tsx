@@ -315,6 +315,7 @@ export default function SettingsScreen() {
         <Button title="Export to CSV" icon="download-outline" kind="secondary" onPress={onExport} />
         <Button title="Delete all data" icon="trash-outline" kind="danger" onPress={onClear} style={{ marginTop: 10 }} />
       </Card>
+      <View style={{ height: 70 }} />
     </Screen>
   );
 }

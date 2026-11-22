@@ -5,7 +5,8 @@ import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { priceTrend, statusPill } from '../../components/itemBits';
 import { Button, Card, Field, Ionicons, Screen, SectionTitle, Stat, styles } from '../../components/ui';
 import { CATEGORIES, categoryColor } from '../../lib/categories';
-import { renameItemKey, setItemKeyCategory } from '../../lib/db';
+import { renameItemKey, setItemKeyCategory, setItemType } from '../../lib/db';
+import { typesFor } from '../../lib/itemTypes';
 import { money, prettyDate, qty, relativeDays } from '../../lib/format';
 import { normalizeKey, summarizeItems } from '../../lib/stats';
 import { theme } from '../../lib/theme';
@@ -14,7 +15,8 @@ import { useAllData } from '../../lib/useData';
 export default function ItemDetail() {
   const { key } = useLocalSearchParams<{ key: string }>();
   const db = useSQLiteContext();
-  const { items, settings, loaded } = useAllData();
+  const { items, settings, loaded, typeOf, overrides } = useAllData();
+  const [typeOpen, setTypeOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [newName, setNewName] = useState('');
   const [catOpen, setCatOpen] = useState(false);
@@ -68,6 +70,11 @@ export default function ItemDetail() {
           <Pressable onPress={() => setCatOpen(true)} style={[styles.row, { gap: 6, marginTop: 6 }]}>
             <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: categoryColor(s.category) }} />
             <Text style={{ color: theme.inkSoft, fontWeight: '700' }}>{s.category}</Text>
+            <Ionicons name="chevron-down" size={14} color={theme.inkSoft} />
+          </Pressable>
+          <Pressable onPress={() => setTypeOpen(true)} style={[styles.row, { gap: 6, marginTop: 6 }]}>
+            <Ionicons name="pricetag-outline" size={13} color={theme.inkSoft} />
+            <Text style={{ color: theme.inkSoft, fontWeight: '700' }}>Type: {typeOf(s.name, s.category)}</Text>
             <Ionicons name="chevron-down" size={14} color={theme.inkSoft} />
           </Pressable>
 
@@ -175,6 +182,44 @@ export default function ItemDetail() {
           <Button title="Rename or merge" icon="git-merge-outline" kind="secondary" onPress={() => { setNewName(s.name); setEditing(true); }} />
         )}
       </Screen>
+
+      <Modal visible={typeOpen} transparent animationType="slide" onRequestClose={() => setTypeOpen(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: '#0006' }} onPress={() => setTypeOpen(false)} />
+        <View style={{ backgroundColor: theme.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '70%', padding: 16 }}>
+          <Text style={[styles.section, { marginBottom: 4 }]}>Type within {s.category}</Text>
+          <Text style={[styles.hint, { marginTop: 0, marginBottom: 6 }]}>Used for the monthly breakdown, e.g. chicken vs beef.</Text>
+          <ScrollView>
+            {typesFor(s.category).map((t) => {
+              const active = typeOf(s.name, s.category) === t;
+              return (
+                <Pressable
+                  key={t}
+                  onPress={async () => {
+                    await setItemType(db, s.key, t);
+                    setTypeOpen(false);
+                    router.replace({ pathname: '/item/[key]', params: { key: s.key } });
+                  }}
+                  style={[styles.row, { gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.border }]}
+                >
+                  <Ionicons name={active ? 'radio-button-on' : 'radio-button-off'} size={18} color={active ? theme.accent : theme.inkFaint} />
+                  <Text style={styles.body}>{t}</Text>
+                </Pressable>
+              );
+            })}
+            {overrides.has(s.key) ? (
+              <Button
+                title="Let TillTrack decide"
+                kind="ghost"
+                onPress={async () => {
+                  await setItemType(db, s.key, null);
+                  setTypeOpen(false);
+                  router.replace({ pathname: '/item/[key]', params: { key: s.key } });
+                }}
+              />
+            ) : null}
+          </ScrollView>
+        </View>
+      </Modal>
 
       <Modal visible={catOpen} transparent animationType="slide" onRequestClose={() => setCatOpen(false)}>
         <Pressable style={{ flex: 1, backgroundColor: '#0006' }} onPress={() => setCatOpen(false)} />

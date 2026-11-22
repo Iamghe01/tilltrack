@@ -1,17 +1,18 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
-import { router, useFocusEffect } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Text, View } from 'react-native';
-import { Button, Card, H1, Ionicons, Screen, SectionTitle, styles } from '../../components/ui';
-import { AiError, hasAiKey } from '../../lib/ai';
-import { setPendingDraft } from '../../lib/draft';
-import { runScan, type ScanStage } from '../../lib/scanPipeline';
-import { loadSettings } from '../../lib/settings';
-import { toISODate } from '../../lib/stats';
-import { theme } from '../../lib/theme';
+import { Button, Card, Ionicons, Screen, SectionTitle, styles } from '../components/ui';
+import { AiError, hasAiKey } from '../lib/ai';
+import { setPendingDraft } from '../lib/draft';
+import { docScannerAvailable, scanDocument } from '../lib/ocr';
+import { startManual } from '../lib/startManual';
+import { runScan, type ScanStage } from '../lib/scanPipeline';
+import { loadSettings } from '../lib/settings';
+import { theme } from '../lib/theme';
 
 type Step = 'idle' | ScanStage | 'error';
 
@@ -61,7 +62,7 @@ export default function Scan() {
     return () => clearInterval(t);
   }, [busy]);
 
-  async function process(uri: string) {
+  async function process(uri: string, pages?: string[]) {
     setPreview(uri);
     setLastPick(uri);
     setError(null);
@@ -71,7 +72,7 @@ export default function Scan() {
       setStep('preparing');
       const settings = await loadSettings(db);
       const img = await prepareImage(uri);
-      const res = await runScan(db, settings, img, setStep, ctrl.signal);
+      const res = await runScan(db, settings, { ...img, pages: pages?.length ? pages : [img.uri] }, setStep, ctrl.signal);
       if (ctrl.signal.aborted) return;
       res.draft.image_uri = img.uri;
       res.background?.then((b) => {
@@ -95,6 +96,20 @@ export default function Scan() {
     setPreview(null);
   }
 
+  /** Google's document scanner: finds the edges, flattens and cleans the photo. Falls back to the plain camera. */
+  async function fromScanner() {
+    if (docScannerAvailable) {
+      try {
+        const pages = await scanDocument(3);
+        if (pages.length) process(pages[0], pages);
+        return;
+      } catch {
+        // Scanner unavailable on this phone (e.g. no Google Play services): use the camera instead.
+      }
+    }
+    fromCamera();
+  }
+
   async function fromCamera() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
@@ -110,30 +125,22 @@ export default function Scan() {
     if (!r.canceled && r.assets[0]) process(r.assets[0].uri);
   }
 
-  async function manual() {
-    const settings = await loadSettings(db);
-    setPendingDraft({
-      vat_included: settings.pricesIncludeVat !== 0,
-      store: null,
-      date: toISODate(new Date()),
-      time: null,
-      subtotal: null,
-      tax: null,
-      discount: null,
-      total: 0,
-      currency: settings.currency,
-      payment_method: null,
-      image_uri: null,
-      note: null,
-      source: 'manual',
-      items: [],
-    });
-    router.push({ pathname: '/receipt/[id]', params: { id: 'new' } });
-  }
+  const manual = () => startManual(db);
+
+  // Opened from the + button: start the scanner straight away.
+  const { start } = useLocalSearchParams<{ start?: string }>();
+  const started = useRef(false);
+  useEffect(() => {
+    if (start === 'scan' && !started.current) {
+      started.current = true;
+      fromScanner();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [start]);
 
   return (
-    <Screen>
-      <H1 sub="Take a photo and every line is filled in for you">Scan a receipt</H1>
+    <Screen padTop={false}>
+      <Stack.Screen options={{ title: 'Scan a receipt' }} />
 
       {busy || step === 'error' ? (
         <Card style={{ alignItems: 'center' }}>
@@ -181,16 +188,18 @@ export default function Scan() {
             <View style={{ width: 84, height: 84, borderRadius: 42, backgroundColor: theme.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons name="camera" size={40} color={theme.accent} />
             </View>
-            <Button title="Take a photo" icon="camera" onPress={fromCamera} style={{ marginTop: 18, alignSelf: 'stretch' }} />
+            <Button title="Scan receipt" icon="scan" onPress={fromScanner} style={{ marginTop: 18, alignSelf: 'stretch' }} />
             <Button title="Choose from gallery" icon="images" kind="secondary" onPress={fromGallery} style={{ marginTop: 10, alignSelf: 'stretch' }} />
-            <Button title="Enter it manually" icon="create-outline" kind="ghost" onPress={manual} style={{ marginTop: 6 }} />
+            <Button title="Paste text instead" icon="clipboard-outline" kind="ghost" onPress={() => router.replace('/paste')} style={{ marginTop: 6 }} />
+            <Button title="Type it in" icon="create-outline" kind="ghost" onPress={manual} />
           </Card>
 
           <SectionTitle>Tips for a clean scan</SectionTitle>
           {[
             ['sunny-outline', 'Use good light and avoid shadows across the text.'],
-            ['scan-outline', 'Lay the receipt flat, then crop to just the receipt when asked.'],
-            ['resize-outline', 'For long receipts, take two photos and scan each one.'],
+            ['scan-outline', 'Lay the receipt flat on a dark surface. The scanner finds the edges by itself.'],
+            ['resize-outline', 'Long receipt? Scan it in up to 3 parts — tap the + in the scanner to add a part.'],
+            ['clipboard-outline', 'Still hard to read? Use Google Lens to copy the text, then Paste text instead.'],
             ['checkmark-done-outline', 'Check the results before saving. You can fix any line that was misread.'],
           ].map(([icon, text]) => (
             <Card key={text} style={[styles.row, { gap: 12 }]}>

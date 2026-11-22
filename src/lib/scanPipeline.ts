@@ -4,7 +4,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { AiError, extractReceipt, hasAiKey, type ExtractionResult } from './ai';
 import { knownItems, logScan, type DraftReceipt } from './db';
 import { parseRowsLocally } from './localParse';
-import { ocrAvailable, readReceiptText } from './ocr';
+import { ocrAvailable, readPages } from './ocr';
 import type { Settings } from './settings';
 
 export type ScanStage = 'preparing' | 'reading' | 'ai' | 'photo-ai';
@@ -24,7 +24,7 @@ export type BackgroundCheck =
 export async function runScan(
   db: SQLiteDatabase,
   settings: Settings,
-  image: { uri: string; base64: string },
+  image: { uri: string; base64: string; pages?: string[] },
   onStage: (s: ScanStage) => void,
   signal?: AbortSignal,
 ): Promise<ScanOutcome> {
@@ -39,7 +39,7 @@ export async function runScan(
   if (settings.scanMode !== 'photo' && ocrAvailable) {
     onStage('reading');
     try {
-      rows = (await readReceiptText(image.uri)).rows;
+      rows = await readPages(image.pages?.length ? image.pages : [image.uri]);
     } catch {
       rows = [];
     }
@@ -114,4 +114,31 @@ export async function runScan(
 
 function label(r: ExtractionResult) {
   return r.via === 'Gemini' ? 'Gemini' : `${r.model ?? 'AI'} via FreeLLMAPI`;
+}
+
+/** Pasted text (e.g. from Google Lens): arrange it on the phone, let the AI check it in the background. */
+export async function runTextImport(db: SQLiteDatabase, settings: Settings, rows: string[]): Promise<ScanOutcome> {
+  const t0 = Date.now();
+  const secs = () => ((Date.now() - t0) / 1000).toFixed(1);
+  const known = await knownItems(db);
+  const history = new Map(known.map((k) => [k.item_key, k.category]));
+  const knownNames = known.slice(0, 80).map((k) => k.name);
+  const local = parseRowsLocally(rows, settings.currency, history);
+  const base = { ...local.draft, source: 'scan' as const };
+
+  if (hasAiKey(settings) && settings.scanMode !== 'offline') {
+    const background: Promise<BackgroundCheck> = extractReceipt(settings, { kind: 'text', rows, knownNames }, { timeoutMs: 45000 })
+      .then(async (ai) => {
+        await logScan(db, { mode: 'paste+ai', ms: Date.now() - t0, ok: true, items: ai.draft.items.length }).catch(() => {});
+        return { ok: true as const, draft: ai.draft, warnings: ai.warnings, info: `Arranged by ${label(ai)} in ${secs()} s` };
+      })
+      .catch(async (e) => {
+        const why = e instanceof AiError ? e.message : String(e);
+        await logScan(db, { mode: 'paste', ms: Date.now() - t0, ok: local.draft.items.length > 0, items: local.draft.items.length, message: why }).catch(() => {});
+        return { ok: false as const, reason: why };
+      });
+    return { draft: base, warnings: local.warnings.filter((w) => !w.startsWith('Read offline')), info: 'Arranged from pasted text', background };
+  }
+  await logScan(db, { mode: 'paste', ms: Date.now() - t0, ok: local.draft.items.length > 0, items: local.draft.items.length }).catch(() => {});
+  return { draft: base, warnings: local.warnings.map((w) => w.replace('Read offline from the photo', 'Arranged from the pasted text')), info: 'Arranged from pasted text' };
 }
